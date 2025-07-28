@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Geometry Drawing Checker</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.20.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+  <script async src="https://docs.opencv.org/4.x/opencv.js" type="text/javascript"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 1rem;
+      background: #f2f2f2;
+    }
+    h1 {
+      text-align: center;
+    }
+    #canvas-wrapper {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    video, canvas, img {
+      border: 1px solid #ccc;
+      max-width: 100%;
+      height: auto;
+    }
+    #feedback {
+      background: #fff;
+      padding: 1rem;
+      margin-top: 1rem;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    button {
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      margin: 0.5rem auto;
+      display: block;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>Geometry Drawing Checker</h1>
+
+  <video id="video" width="320" height="240" autoplay></video>
+  <button onclick="capturePhoto()">📸 Take Photo</button>
+
+  <div id="canvas-wrapper">
+    <div>
+      <h3>Student Image</h3>
+      <canvas id="studentCanvas" width="320" height="240"></canvas>
+    </div>
+    <div>
+      <h3>Reference Image</h3>
+      <img id="referenceImg" src="answer.png" width="320" height="240" alt="Reference">
+      <canvas id="referenceCanvas" width="320" height="240"></canvas>
+    </div>
+  </div>
+
+  <button onclick="analyzeImages()">✅ Check Drawing</button>
+  <div id="feedback"></div>
+
+  <script>
+    const video = document.getElementById('video');
+    const studentCanvas = document.getElementById('studentCanvas');
+    const studentCtx = studentCanvas.getContext('2d');
+    const referenceImg = document.getElementById('referenceImg');
+    const referenceCanvas = document.getElementById('referenceCanvas');
+    const referenceCtx = referenceCanvas.getContext('2d');
+
+    // Access camera
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        video.srcObject = stream;
+      });
+
+    // Capture photo to canvas
+    function capturePhoto() {
+      studentCtx.drawImage(video, 0, 0, studentCanvas.width, studentCanvas.height);
+    }
+
+    // Load reference image into canvas
+    referenceImg.onload = () => {
+      referenceCtx.drawImage(referenceImg, 0, 0, referenceCanvas.width, referenceCanvas.height);
+    }
+
+    // Analyze drawing using OpenCV.js
+    function analyzeImages() {
+      if (typeof cv === 'undefined') {
+        alert("OpenCV is not loaded yet. Please wait a few seconds.");
+        return;
+      }
+
+      const feedback = document.getElementById('feedback');
+      feedback.innerHTML = "Analyzing...";
+
+      // Load canvases as OpenCV mats
+      let srcStudent = cv.imread(studentCanvas);
+      let srcRef = cv.imread(referenceCanvas);
+
+      // Convert to HSV for color masking
+      let hsvStudent = new cv.Mat();
+      let hsvRef = new cv.Mat();
+      cv.cvtColor(srcStudent, hsvStudent, cv.COLOR_RGBA2RGB);
+      cv.cvtColor(hsvStudent, hsvStudent, cv.COLOR_RGB2HSV);
+      cv.cvtColor(srcRef, hsvRef, cv.COLOR_RGBA2RGB);
+      cv.cvtColor(hsvRef, hsvRef, cv.COLOR_RGB2HSV);
+
+      // Red mask range
+      let lowRed = new cv.Mat(hsvRef.rows, hsvRef.cols, hsvRef.type(), [0, 100, 100, 0]);
+      let highRed = new cv.Mat(hsvRef.rows, hsvRef.cols, hsvRef.type(), [10, 255, 255, 255]);
+      let redRef = new cv.Mat();
+      cv.inRange(hsvRef, lowRed, highRed, redRef);
+
+      let redStudent = new cv.Mat();
+      cv.inRange(hsvStudent, lowRed, highRed, redStudent);
+
+      // Count red pixels in both
+      let redCountRef = cv.countNonZero(redRef);
+      let redCountStudent = cv.countNonZero(redStudent);
+      let redMatch = Math.min(redCountStudent / redCountRef, 1.0);
+
+      // Blue mask range
+      let lowBlue = new cv.Mat(hsvRef.rows, hsvRef.cols, hsvRef.type(), [100, 100, 100, 0]);
+      let highBlue = new cv.Mat(hsvRef.rows, hsvRef.cols, hsvRef.type(), [130, 255, 255, 255]);
+      let blueRef = new cv.Mat();
+      cv.inRange(hsvRef, lowBlue, highBlue, blueRef);
+
+      let blueStudent = new cv.Mat();
+      cv.inRange(hsvStudent, lowBlue, highBlue, blueStudent);
+
+      let blueCountRef = cv.countNonZero(blueRef);
+      let blueCountStudent = cv.countNonZero(blueStudent);
+      let blueMatch = Math.min(blueCountStudent / blueCountRef, 1.0);
+
+      // Black lines (edges)
+      let grayStudent = new cv.Mat();
+      let edgesStudent = new cv.Mat();
+      cv.cvtColor(srcStudent, grayStudent, cv.COLOR_RGBA2GRAY);
+      cv.Canny(grayStudent, edgesStudent, 50, 150);
+      let edgeCountStudent = cv.countNonZero(edgesStudent);
+
+      let grayRef = new cv.Mat();
+      let edgesRef = new cv.Mat();
+      cv.cvtColor(srcRef, grayRef, cv.COLOR_RGBA2GRAY);
+      cv.Canny(grayRef, edgesRef, 50, 150);
+      let edgeCountRef = cv.countNonZero(edgesRef);
+      let structureMatch = Math.min(edgeCountStudent / edgeCountRef, 1.0);
+
+      // Score calculation
+      let total = 0;
+      let out = "<h3>Feedback</h3><ul>";
+      if (structureMatch > 0.7) { total += 3; out += "<li>✅ Basic structure drawn correctly</li>"; }
+      else { out += "<li>❌ Structure not matched</li>"; }
+
+      if (redMatch > 0.6) { total += 3; out += "<li>✅ Required red points/lines present</li>"; }
+      else { out += "<li>❌ Missing red lines/points</li>"; }
+
+      if (blueMatch > 0.5) { total += 2; out += "<li>✅ Labels detected</li>"; }
+      else { out += "<li>❌ Labels missing or incorrect</li>"; }
+
+      out += `</ul><h2>Total Score: ${total} / 8</h2>`;
+      feedback.innerHTML = out;
+
+      // Cleanup
+      srcStudent.delete(); srcRef.delete(); hsvStudent.delete(); hsvRef.delete();
+      redRef.delete(); redStudent.delete(); lowRed.delete(); highRed.delete();
+      blueRef.delete(); blueStudent.delete(); lowBlue.delete(); highBlue.delete();
+      grayStudent.delete(); edgesStudent.delete(); grayRef.delete(); edgesRef.delete();
+    }
+  </script>
+</body>
+</html>
