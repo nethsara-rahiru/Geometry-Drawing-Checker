@@ -127,8 +127,9 @@
       cv.imshow("blueStudentCanvas", blueStudent);
 
       let grayStudent = new cv.Mat();
-      let edgesStudent = new cv.Mat();
       cv.cvtColor(srcStudent, grayStudent, cv.COLOR_RGBA2GRAY);
+      cv.adaptiveThreshold(grayStudent, enhanced, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 11, 2);
+      let edgesStudent = new cv.Mat();
       cv.Canny(grayStudent, edgesStudent, 50, 150);
       cv.imshow("edgeStudentCanvas", edgesStudent);
 
