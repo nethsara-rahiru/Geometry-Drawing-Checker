@@ -4,9 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Geometry Drawing Checker</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.20.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
-  <script async src="https://docs.opencv.org/4.x/opencv.js" type="text/javascript"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -42,6 +39,22 @@
       display: block;
       cursor: pointer;
     }
+    #settings {
+      max-width: 320px;
+      margin: 1rem auto;
+      padding: 1rem;
+      background: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    #settings label {
+      display: block;
+      margin: 0.5rem 0 0.2rem;
+    }
+    #settings input[type="range"],
+    #settings input[type="number"] {
+      width: 100%;
+    }
   </style>
 </head>
 <body>
@@ -49,6 +62,17 @@
 
   <video id="video" width="320" height="240" autoplay></video>
   <button onclick="capturePhoto()">📸 Take Photo</button>
+
+  <div id="settings">
+    <h3>Detection Settings</h3>
+    <label>Brightness Threshold: <span id="thresholdValue">100</span></label>
+    <input type="range" id="thresholdSlider" min="0" max="255" value="100">
+
+    <label>Pixel Size:</label>
+    <input type="number" id="pixelSize" value="1" min="1" max="5">
+
+    <label><input type="checkbox" id="livePreview" checked> Live Preview</label>
+  </div>
 
   <div id="canvas-wrapper">
     <div>
@@ -83,46 +107,59 @@
 
     function capturePhoto() {
       studentCtx.drawImage(video, 0, 0, studentCanvas.width, studentCanvas.height);
+      if (document.getElementById('livePreview').checked) {
+        analyzeImages();
+      }
     }
 
     referenceImg.onload = () => {
       referenceCtx.drawImage(referenceImg, 0, 0, referenceCanvas.width, referenceCanvas.height);
     }
 
-    function analyzeImages() {
-      if (typeof cv === 'undefined') {
-        alert("OpenCV is not loaded yet. Please wait a few seconds.");
-        return;
+    document.getElementById('thresholdSlider').addEventListener('input', () => {
+      document.getElementById('thresholdValue').textContent = document.getElementById('thresholdSlider').value;
+      if (document.getElementById('livePreview').checked) {
+        analyzeImages();
       }
+    });
 
+    document.getElementById('pixelSize').addEventListener('change', () => {
+      if (document.getElementById('livePreview').checked) {
+        analyzeImages();
+      }
+    });
+
+    function analyzeImages() {
       const feedback = document.getElementById('feedback');
       feedback.innerHTML = "Analyzing...";
 
-      let srcStudent = cv.imread(studentCanvas);
-      let gray = new cv.Mat();
-      cv.cvtColor(srcStudent, gray, cv.COLOR_RGBA2GRAY);
-      let edges = new cv.Mat();
-      cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
-      cv.Canny(gray, edges, 50, 150);
+      const threshold = parseInt(document.getElementById('thresholdSlider').value);
+      const pixelSize = parseInt(document.getElementById('pixelSize').value);
 
-      // Detect lines using Hough Line Transform
-      let lines = new cv.Mat();
-      cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 50, 30, 10);
+      const imgData = studentCtx.getImageData(0, 0, studentCanvas.width, studentCanvas.height);
+      const data = imgData.data;
 
-      // Draw lines on a blank canvas
-      let colorEdge = new cv.Mat();
-      cv.cvtColor(edges, colorEdge, cv.COLOR_GRAY2RGBA);
-      for (let i = 0; i < lines.rows; i++) {
-        let pt1 = new cv.Point(lines.data32S[i * 4], lines.data32S[i * 4 + 1]);
-        let pt2 = new cv.Point(lines.data32S[i * 4 + 2], lines.data32S[i * 4 + 3]);
-        cv.line(colorEdge, pt1, pt2, [0, 255, 0, 255], 2);
+      const points = [];
+      for (let y = 0; y < studentCanvas.height; y++) {
+        for (let x = 0; x < studentCanvas.width; x++) {
+          const index = (y * studentCanvas.width + x) * 4;
+          const r = data[index];
+          const g = data[index + 1];
+          const b = data[index + 2];
+          const brightness = (r + g + b) / 3;
+          if (brightness < threshold) {
+            points.push({x, y});
+          }
+        }
       }
-      cv.imshow("edgeStudentCanvas", colorEdge);
 
-      feedback.innerHTML = `<p>✅ Detected ${lines.rows} straight lines in student drawing.</p>`;
+      edgeStudentCtx.clearRect(0, 0, edgeStudentCanvas.width, edgeStudentCanvas.height);
+      edgeStudentCtx.fillStyle = 'red';
+      for (let pt of points) {
+        edgeStudentCtx.fillRect(pt.x, pt.y, pixelSize, pixelSize);
+      }
 
-      // Cleanup
-      srcStudent.delete(); gray.delete(); edges.delete(); lines.delete(); colorEdge.delete();
+      feedback.innerHTML = `<p>🧠 Detected ${points.length} dark pixels (possible line points).</p>`;
     }
   </script>
 </body>
