@@ -54,6 +54,9 @@
     <div>
       <h3>Student Image</h3>
       <canvas id="studentCanvas" width="320" height="240"></canvas>
+      <canvas id="redStudentCanvas" width="320" height="240"></canvas>
+      <canvas id="blueStudentCanvas" width="320" height="240"></canvas>
+      <canvas id="edgeStudentCanvas" width="320" height="240"></canvas>
     </div>
     <div>
       <h3>Reference Image</h3>
@@ -69,27 +72,29 @@
     const video = document.getElementById('video');
     const studentCanvas = document.getElementById('studentCanvas');
     const studentCtx = studentCanvas.getContext('2d');
+    const redStudentCanvas = document.getElementById('redStudentCanvas');
+    const redStudentCtx = redStudentCanvas.getContext('2d');
+    const blueStudentCanvas = document.getElementById('blueStudentCanvas');
+    const blueStudentCtx = blueStudentCanvas.getContext('2d');
+    const edgeStudentCanvas = document.getElementById('edgeStudentCanvas');
+    const edgeStudentCtx = edgeStudentCanvas.getContext('2d');
     const referenceImg = document.getElementById('referenceImg');
     const referenceCanvas = document.getElementById('referenceCanvas');
     const referenceCtx = referenceCanvas.getContext('2d');
 
-    // Access camera
     navigator.mediaDevices.getUserMedia({ video: true })
       .then(stream => {
         video.srcObject = stream;
       });
 
-    // Capture photo to canvas
     function capturePhoto() {
       studentCtx.drawImage(video, 0, 0, studentCanvas.width, studentCanvas.height);
     }
 
-    // Load reference image into canvas
     referenceImg.onload = () => {
       referenceCtx.drawImage(referenceImg, 0, 0, referenceCanvas.width, referenceCanvas.height);
     }
 
-    // Analyze drawing using OpenCV.js
     function analyzeImages() {
       if (typeof cv === 'undefined') {
         alert("OpenCV is not loaded yet. Please wait a few seconds.");
@@ -99,11 +104,9 @@
       const feedback = document.getElementById('feedback');
       feedback.innerHTML = "Analyzing...";
 
-      // Load canvases as OpenCV mats
       let srcStudent = cv.imread(studentCanvas);
       let srcRef = cv.imread(referenceCanvas);
 
-      // Convert to HSV for color masking
       let hsvStudent = new cv.Mat();
       let hsvRef = new cv.Mat();
       cv.cvtColor(srcStudent, hsvStudent, cv.COLOR_RGBA2RGB);
@@ -111,48 +114,44 @@
       cv.cvtColor(srcRef, hsvRef, cv.COLOR_RGBA2RGB);
       cv.cvtColor(hsvRef, hsvRef, cv.COLOR_RGB2HSV);
 
-      // Red mask range
       let lowRed = new cv.Mat(hsvRef.rows, hsvRef.cols, hsvRef.type(), [0, 100, 100, 0]);
       let highRed = new cv.Mat(hsvRef.rows, hsvRef.cols, hsvRef.type(), [10, 255, 255, 255]);
-      let redRef = new cv.Mat();
-      cv.inRange(hsvRef, lowRed, highRed, redRef);
-
       let redStudent = new cv.Mat();
       cv.inRange(hsvStudent, lowRed, highRed, redStudent);
+      cv.imshow("redStudentCanvas", redStudent);
 
-      // Count red pixels in both
-      let redCountRef = cv.countNonZero(redRef);
-      let redCountStudent = cv.countNonZero(redStudent);
-      let redMatch = Math.min(redCountStudent / redCountRef, 1.0);
-
-      // Blue mask range
       let lowBlue = new cv.Mat(hsvRef.rows, hsvRef.cols, hsvRef.type(), [100, 100, 100, 0]);
       let highBlue = new cv.Mat(hsvRef.rows, hsvRef.cols, hsvRef.type(), [130, 255, 255, 255]);
-      let blueRef = new cv.Mat();
-      cv.inRange(hsvRef, lowBlue, highBlue, blueRef);
-
       let blueStudent = new cv.Mat();
       cv.inRange(hsvStudent, lowBlue, highBlue, blueStudent);
+      cv.imshow("blueStudentCanvas", blueStudent);
 
-      let blueCountRef = cv.countNonZero(blueRef);
-      let blueCountStudent = cv.countNonZero(blueStudent);
-      let blueMatch = Math.min(blueCountStudent / blueCountRef, 1.0);
-
-      // Black lines (edges)
       let grayStudent = new cv.Mat();
       let edgesStudent = new cv.Mat();
       cv.cvtColor(srcStudent, grayStudent, cv.COLOR_RGBA2GRAY);
       cv.Canny(grayStudent, edgesStudent, 50, 150);
-      let edgeCountStudent = cv.countNonZero(edgesStudent);
+      cv.imshow("edgeStudentCanvas", edgesStudent);
+
+      let srcRefRed = new cv.Mat();
+      cv.inRange(hsvRef, lowRed, highRed, srcRefRed);
+      let redCountRef = cv.countNonZero(srcRefRed);
+      let redCountStudent = cv.countNonZero(redStudent);
+      let redMatch = Math.min(redCountStudent / redCountRef, 1.0);
+
+      let srcRefBlue = new cv.Mat();
+      cv.inRange(hsvRef, lowBlue, highBlue, srcRefBlue);
+      let blueCountRef = cv.countNonZero(srcRefBlue);
+      let blueCountStudent = cv.countNonZero(blueStudent);
+      let blueMatch = Math.min(blueCountStudent / blueCountRef, 1.0);
 
       let grayRef = new cv.Mat();
       let edgesRef = new cv.Mat();
       cv.cvtColor(srcRef, grayRef, cv.COLOR_RGBA2GRAY);
       cv.Canny(grayRef, edgesRef, 50, 150);
+      let edgeCountStudent = cv.countNonZero(edgesStudent);
       let edgeCountRef = cv.countNonZero(edgesRef);
       let structureMatch = Math.min(edgeCountStudent / edgeCountRef, 1.0);
 
-      // Score calculation
       let total = 0;
       let out = "<h3>Feedback</h3><ul>";
       if (structureMatch > 0.7) { total += 3; out += "<li>✅ Basic structure drawn correctly</li>"; }
@@ -169,8 +168,8 @@
 
       // Cleanup
       srcStudent.delete(); srcRef.delete(); hsvStudent.delete(); hsvRef.delete();
-      redRef.delete(); redStudent.delete(); lowRed.delete(); highRed.delete();
-      blueRef.delete(); blueStudent.delete(); lowBlue.delete(); highBlue.delete();
+      redStudent.delete(); blueStudent.delete(); lowRed.delete(); highRed.delete();
+      lowBlue.delete(); highBlue.delete(); srcRefRed.delete(); srcRefBlue.delete();
       grayStudent.delete(); edgesStudent.delete(); grayRef.delete(); edgesRef.delete();
     }
   </script>
