@@ -54,8 +54,6 @@
     <div>
       <h3>Student Image</h3>
       <canvas id="studentCanvas" width="320" height="240"></canvas>
-      <canvas id="redStudentCanvas" width="320" height="240"></canvas>
-      <canvas id="blueStudentCanvas" width="320" height="240"></canvas>
       <canvas id="edgeStudentCanvas" width="320" height="240"></canvas>
     </div>
     <div>
@@ -72,10 +70,6 @@
     const video = document.getElementById('video');
     const studentCanvas = document.getElementById('studentCanvas');
     const studentCtx = studentCanvas.getContext('2d');
-    const redStudentCanvas = document.getElementById('redStudentCanvas');
-    const redStudentCtx = redStudentCanvas.getContext('2d');
-    const blueStudentCanvas = document.getElementById('blueStudentCanvas');
-    const blueStudentCtx = blueStudentCanvas.getContext('2d');
     const edgeStudentCanvas = document.getElementById('edgeStudentCanvas');
     const edgeStudentCtx = edgeStudentCanvas.getContext('2d');
     const referenceImg = document.getElementById('referenceImg');
@@ -105,72 +99,30 @@
       feedback.innerHTML = "Analyzing...";
 
       let srcStudent = cv.imread(studentCanvas);
-      let srcRef = cv.imread(referenceCanvas);
+      let gray = new cv.Mat();
+      cv.cvtColor(srcStudent, gray, cv.COLOR_RGBA2GRAY);
+      let edges = new cv.Mat();
+      cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+      cv.Canny(gray, edges, 50, 150);
 
-      let hsvStudent = new cv.Mat();
-      let hsvRef = new cv.Mat();
-      cv.cvtColor(srcStudent, hsvStudent, cv.COLOR_RGBA2RGB);
-      cv.cvtColor(hsvStudent, hsvStudent, cv.COLOR_RGB2HSV);
-      cv.cvtColor(srcRef, hsvRef, cv.COLOR_RGBA2RGB);
-      cv.cvtColor(hsvRef, hsvRef, cv.COLOR_RGB2HSV);
+      // Detect lines using Hough Line Transform
+      let lines = new cv.Mat();
+      cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 50, 30, 10);
 
-      let lowRed = new cv.Mat(hsvRef.rows, hsvRef.cols, hsvRef.type(), [0, 100, 100, 0]);
-      let highRed = new cv.Mat(hsvRef.rows, hsvRef.cols, hsvRef.type(), [10, 255, 255, 255]);
-      let redStudent = new cv.Mat();
-      cv.inRange(hsvStudent, lowRed, highRed, redStudent);
-      cv.imshow("redStudentCanvas", redStudent);
+      // Draw lines on a blank canvas
+      let colorEdge = new cv.Mat();
+      cv.cvtColor(edges, colorEdge, cv.COLOR_GRAY2RGBA);
+      for (let i = 0; i < lines.rows; i++) {
+        let pt1 = new cv.Point(lines.data32S[i * 4], lines.data32S[i * 4 + 1]);
+        let pt2 = new cv.Point(lines.data32S[i * 4 + 2], lines.data32S[i * 4 + 3]);
+        cv.line(colorEdge, pt1, pt2, [0, 255, 0, 255], 2);
+      }
+      cv.imshow("edgeStudentCanvas", colorEdge);
 
-      let lowBlue = new cv.Mat(hsvRef.rows, hsvRef.cols, hsvRef.type(), [100, 100, 100, 0]);
-      let highBlue = new cv.Mat(hsvRef.rows, hsvRef.cols, hsvRef.type(), [130, 255, 255, 255]);
-      let blueStudent = new cv.Mat();
-      cv.inRange(hsvStudent, lowBlue, highBlue, blueStudent);
-      cv.imshow("blueStudentCanvas", blueStudent);
-
-      let grayStudent = new cv.Mat();
-      let edgesStudent = new cv.Mat();
-      cv.cvtColor(srcStudent, grayStudent, cv.COLOR_RGBA2GRAY);
-      cv.Canny(grayStudent, edgesStudent, 50, 150);
-      cv.imshow("edgeStudentCanvas", edgesStudent);
-
-      let srcRefRed = new cv.Mat();
-      cv.inRange(hsvRef, lowRed, highRed, srcRefRed);
-      let redCountRef = cv.countNonZero(srcRefRed);
-      let redCountStudent = cv.countNonZero(redStudent);
-      let redMatch = Math.min(redCountStudent / redCountRef, 1.0);
-
-      let srcRefBlue = new cv.Mat();
-      cv.inRange(hsvRef, lowBlue, highBlue, srcRefBlue);
-      let blueCountRef = cv.countNonZero(srcRefBlue);
-      let blueCountStudent = cv.countNonZero(blueStudent);
-      let blueMatch = Math.min(blueCountStudent / blueCountRef, 1.0);
-
-      let grayRef = new cv.Mat();
-      let edgesRef = new cv.Mat();
-      cv.cvtColor(srcRef, grayRef, cv.COLOR_RGBA2GRAY);
-      cv.Canny(grayRef, edgesRef, 50, 150);
-      let edgeCountStudent = cv.countNonZero(edgesStudent);
-      let edgeCountRef = cv.countNonZero(edgesRef);
-      let structureMatch = Math.min(edgeCountStudent / edgeCountRef, 1.0);
-
-      let total = 0;
-      let out = "<h3>Feedback</h3><ul>";
-      if (structureMatch > 0.7) { total += 3; out += "<li>✅ Basic structure drawn correctly</li>"; }
-      else { out += "<li>❌ Structure not matched</li>"; }
-
-      if (redMatch > 0.6) { total += 3; out += "<li>✅ Required red points/lines present</li>"; }
-      else { out += "<li>❌ Missing red lines/points</li>"; }
-
-      if (blueMatch > 0.5) { total += 2; out += "<li>✅ Labels detected</li>"; }
-      else { out += "<li>❌ Labels missing or incorrect</li>"; }
-
-      out += `</ul><h2>Total Score: ${total} / 8</h2>`;
-      feedback.innerHTML = out;
+      feedback.innerHTML = `<p>✅ Detected ${lines.rows} straight lines in student drawing.</p>`;
 
       // Cleanup
-      srcStudent.delete(); srcRef.delete(); hsvStudent.delete(); hsvRef.delete();
-      redStudent.delete(); blueStudent.delete(); lowRed.delete(); highRed.delete();
-      lowBlue.delete(); highBlue.delete(); srcRefRed.delete(); srcRefBlue.delete();
-      grayStudent.delete(); edgesStudent.delete(); grayRef.delete(); edgesRef.delete();
+      srcStudent.delete(); gray.delete(); edges.delete(); lines.delete(); colorEdge.delete();
     }
   </script>
 </body>
